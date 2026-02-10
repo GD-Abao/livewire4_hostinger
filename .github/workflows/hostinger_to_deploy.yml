@@ -1,0 +1,185 @@
+name: 20260130Laravel網站部署到Hostinger
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  web-deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1) 取得程式碼
+      - name: Get latest code
+        uses: actions/checkout@v4
+
+      # 2) 安裝 PHP + Composer（CI 端做，不在 Hostinger 裝 composer）
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.3"
+          tools: composer:v2
+
+      # 3) 安裝 Node（用來 build 前端資產）
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "latest"
+          cache: "npm"
+
+      # 4) 安裝後端依賴（production）
+      - name: Install Composer dependencies
+        run: composer install --no-dev --optimize-autoloader --no-interaction --prefer-dist
+
+      # 5) 安裝前端依賴
+      - name: Install npm dependencies
+        run: npm ci
+
+      # 6) 打包前端
+      - name: Build project
+        run: npm run build
+
+      # 7) 由 .env.example 產生 .env.deploy，並覆蓋 secrets
+      #    注意：APP_KEY 由 GitHub Secrets 提供，不要在部署流程中重新產生
+      - name: Prepare .env from .env.example
+        env:
+          APP_ENV: production
+          APP_DEBUG: "false"
+          APP_KEY: ${{ secrets.APP_KEY }}
+          APP_URL: ${{ secrets.APP_URL }}
+
+          DB_CONNECTION: mysql
+          DB_HOST: 127.0.0.1
+          DB_PORT: "3306"
+          DB_DATABASE: ${{ secrets.DB_DATABASE }}
+          DB_USERNAME: ${{ secrets.DB_USERNAME }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+
+          MAIL_MAILER: smtp
+          MAIL_HOST: ${{ secrets.MAIL_HOST }}
+          MAIL_PORT: "587"
+          MAIL_USERNAME: ${{ secrets.MAIL_USERNAME }}
+          MAIL_PASSWORD: ${{ secrets.MAIL_PASSWORD }}
+          MAIL_FROM_ADDRESS: ${{ secrets.MAIL_FROM_ADDRESS }}
+          MAIL_FROM_NAME: ${{ secrets.MAIL_FROM_NAME }}
+        run: |
+          cp .env.example .env.deploy
+          python - <<'PY'
+          import os, re
+
+          path = ".env.deploy"
+          with open(path, "r", encoding="utf-8") as f:
+              lines = f.read().splitlines()
+
+          def set_key(lines, key, value):
+              if value is None or value == "":
+                  return lines
+              pattern = re.compile(rf"^{re.escape(key)}=")
+              out = []
+              found = False
+              for line in lines:
+                  if pattern.match(line):
+                      out.append(f"{key}={value}")
+                      found = True
+                  else:
+                      out.append(line)
+              if not found:
+                  out.append(f"{key}={value}")
+              return out
+
+          values = {
+              "APP_ENV": os.getenv("APP_ENV"),
+              "APP_DEBUG": os.getenv("APP_DEBUG"),
+              "APP_KEY": os.getenv("APP_KEY"),
+              "APP_URL": os.getenv("APP_URL"),
+
+              "DB_CONNECTION": os.getenv("DB_CONNECTION"),
+              "DB_HOST": os.getenv("DB_HOST"),
+              "DB_PORT": os.getenv("DB_PORT"),
+              "DB_DATABASE": os.getenv("DB_DATABASE"),
+              "DB_USERNAME": os.getenv("DB_USERNAME"),
+              "DB_PASSWORD": os.getenv("DB_PASSWORD"),
+
+              "MAIL_MAILER": os.getenv("MAIL_MAILER"),
+              "MAIL_HOST": os.getenv("MAIL_HOST"),
+              "MAIL_PORT": os.getenv("MAIL_PORT"),
+              "MAIL_USERNAME": os.getenv("MAIL_USERNAME"),
+              "MAIL_PASSWORD": os.getenv("MAIL_PASSWORD"),
+              "MAIL_FROM_ADDRESS": os.getenv("MAIL_FROM_ADDRESS"),
+              "MAIL_FROM_NAME": os.getenv("MAIL_FROM_NAME"),
+          }
+
+          for k, v in values.items():
+              lines = set_key(lines, k, v)
+
+          with open(path, "w", encoding="utf-8") as f:
+              f.write("\n".join(lines) + "\n")
+          PY
+
+      # 8) 移除不需上傳的檔案
+      - name: Prune deploy files
+        run: |
+          rm -rf node_modules .git .github tests
+
+      # 9) 上傳到主機：丟到 domains/你的網域/laravel
+      #    ✅ GitHub Secrets 的 SITE_PATH 要設定成：/home/uXXXX/domains/你的網域
+      - name: Deploy via SCP (to laravel/)
+        uses: appleboy/scp-action@v0.1.4
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          port: ${{ secrets.SSH_PORT }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          source: "./"
+          target: ${{ secrets.SITE_PATH }}/laravel
+
+      # 10) 主機端處理：不安裝 composer、不跑 artisan
+      #     - 用 ln 建立 storage symlink（等同 storage:link）
+      #     - 直接刪快取檔（等同 artisan clear cache）
+      #     - 把 laravel/public 發佈到 public_html（不做 public_html symlink）
+      #     - 修正 public_html/index.php 指向 ../laravel
+      - name: SSH Publish to public_html (no composer, no artisan)
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          port: ${{ secrets.SSH_PORT }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          script: |
+            set -e
+
+            DOMAIN_ROOT="${{ secrets.SITE_PATH }}"          # /home/uXXXX/domains/你的網域
+            LARAVEL="$DOMAIN_ROOT/laravel"
+            PUBLIC_HTML="$DOMAIN_ROOT/public_html"
+
+            mkdir -p "$LARAVEL"
+            cd "$LARAVEL" || exit 1
+
+            # 1) 套用 .env
+            [ -f .env.deploy ] && mv -f .env.deploy .env
+
+            # 2) 共享主機常見必要權限
+            chmod -R u+rwX storage bootstrap/cache || true
+
+            # 3) 等同 php artisan storage:link（不用 artisan）
+            rm -rf "$LARAVEL/public/storage"
+            ln -sfn "$LARAVEL/storage/app/public" "$LARAVEL/public/storage"
+
+            # 4) 等同 artisan clear cache（不用 artisan，直接刪檔案）
+            rm -f "$LARAVEL/bootstrap/cache/"*.php || true
+            rm -rf "$LARAVEL/storage/framework/views/"* || true
+            rm -rf "$LARAVEL/storage/framework/cache/"* || true
+            rm -rf "$LARAVEL/storage/framework/sessions/"* || true
+
+            # 5) 發佈 public 到 public_html（最穩，不靠 public_html symlink）
+            rm -rf "$PUBLIC_HTML"/*
+            cp -a "$LARAVEL/public/." "$PUBLIC_HTML/"
+
+            # 6) 修正 public_html/index.php 指向 ../laravel
+            sed -i "s#__DIR__\.'/\.\./vendor/autoload\.php'#__DIR__\.'/\.\./laravel/vendor/autoload.php'#g" "$PUBLIC_HTML/index.php" || true
+            sed -i "s#__DIR__\.'/\.\./bootstrap/app\.php'#__DIR__\.'/\.\./laravel/bootstrap/app.php'#g" "$PUBLIC_HTML/index.php" || true
+
+            # 7) 清掉不必要檔案
+            rm -rf .git .github node_modules || true
