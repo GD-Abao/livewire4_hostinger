@@ -4,7 +4,7 @@ use App\Livewire\GdActions\Logout;
 use Illuminate\Support\Facades\Route;
 
 // 白名單
-$allowedEmails = ['admin@example.com', 'test@example.com'];
+$allowedEmails = ['admin@example.com', 'test@example.com', 'service@great-good.tw'];
 
 Gate::define('gd-admin-whitelist', function ($user) use ($allowedEmails) {
     return in_array($user->email, $allowedEmails, true);
