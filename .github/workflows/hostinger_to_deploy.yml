@@ -66,69 +66,69 @@ jobs:
           MAIL_FROM_NAME: ${{ secrets.MAIL_FROM_NAME }}
         run: |
           cp .env.example .env.deploy
-          python - <<'PY'
-            import os, re
+            python - <<'PY'
+           import os, re
 
-            path = ".env.deploy"
-            with open(path, "r", encoding="utf-8") as f:
-              lines = f.read().splitlines()
+           path = ".env.deploy"
+           with open(path, "r", encoding="utf-8") as f:
+             lines = f.read().splitlines()
 
-            def normalize_env_value(value):
-              if value is None:
-                return None
-              if value == "":
-                return ""
-              # Quote values with whitespace or comment-like chars to avoid .env parsing issues.
-              if re.search(r"[\s#]", value) or "=" in value:
-                escaped = value.replace("\\", "\\\\").replace('"', '\\"')
-                return f'"{escaped}"'
-              return value
+           def normalize_env_value(value):
+             if value is None:
+               return None
+             if value == "":
+               return ""
+             # Quote values with whitespace or comment-like chars to avoid .env parsing issues.
+             if re.search(r"[\s#]", value) or "=" in value:
+               escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+               return f'"{escaped}"'
+             return value
 
-            def set_key(lines, key, value):
-              if value is None or value == "":
-                return lines
-              value = normalize_env_value(value)
-              pattern = re.compile(rf"^{re.escape(key)}=")
-              out = []
-              found = False
-              for line in lines:
-                if pattern.match(line):
-                  out.append(f"{key}={value}")
-                  found = True
-                else:
-                  out.append(line)
-              if not found:
-                out.append(f"{key}={value}")
-              return out
+           def set_key(lines, key, value):
+             if value is None or value == "":
+               return lines
+             value = normalize_env_value(value)
+             pattern = re.compile(rf"^{re.escape(key)}=")
+             out = []
+             found = False
+             for line in lines:
+               if pattern.match(line):
+                 out.append(f"{key}={value}")
+                 found = True
+               else:
+                 out.append(line)
+             if not found:
+               out.append(f"{key}={value}")
+             return out
 
-          values = {
-              "APP_ENV": os.getenv("APP_ENV"),
-              "APP_DEBUG": os.getenv("APP_DEBUG"),
-              "APP_KEY": os.getenv("APP_KEY"),
-              "APP_URL": os.getenv("APP_URL"),
+           values = {
+             "APP_ENV": os.getenv("APP_ENV"),
+             "APP_DEBUG": os.getenv("APP_DEBUG"),
+             "APP_KEY": os.getenv("APP_KEY"),
+             "APP_URL": os.getenv("APP_URL"),
 
-              "DB_CONNECTION": os.getenv("DB_CONNECTION"),
-              "DB_HOST": os.getenv("DB_HOST"),
-              "DB_PORT": os.getenv("DB_PORT"),
-              "DB_DATABASE": os.getenv("DB_DATABASE"),
-              "DB_USERNAME": os.getenv("DB_USERNAME"),
-              "DB_PASSWORD": os.getenv("DB_PASSWORD"),
+             "DB_CONNECTION": os.getenv("DB_CONNECTION"),
+             "DB_HOST": os.getenv("DB_HOST"),
+             "DB_PORT": os.getenv("DB_PORT"),
+             "DB_DATABASE": os.getenv("DB_DATABASE"),
+             "DB_USERNAME": os.getenv("DB_USERNAME"),
+             "DB_PASSWORD": os.getenv("DB_PASSWORD"),
 
-              "MAIL_MAILER": os.getenv("MAIL_MAILER"),
-              "MAIL_HOST": os.getenv("MAIL_HOST"),
-              "MAIL_PORT": os.getenv("MAIL_PORT"),
-              "MAIL_USERNAME": os.getenv("MAIL_USERNAME"),
-              "MAIL_PASSWORD": os.getenv("MAIL_PASSWORD"),
-              "MAIL_FROM_ADDRESS": os.getenv("MAIL_FROM_ADDRESS"),
-              "MAIL_FROM_NAME": os.getenv("MAIL_FROM_NAME"),
-          }
+             "MAIL_MAILER": os.getenv("MAIL_MAILER"),
+             "MAIL_HOST": os.getenv("MAIL_HOST"),
+             "MAIL_PORT": os.getenv("MAIL_PORT"),
+             "MAIL_USERNAME": os.getenv("MAIL_USERNAME"),
+             "MAIL_PASSWORD": os.getenv("MAIL_PASSWORD"),
+             "MAIL_FROM_ADDRESS": os.getenv("MAIL_FROM_ADDRESS"),
+             "MAIL_FROM_NAME": os.getenv("MAIL_FROM_NAME"),
+           }
 
-          for k, v in values.items():
-              lines = set_key(lines, k, v)
+           for k, v in values.items():
+             lines = set_key(lines, k, v)
 
-          with open(path, "w", encoding="utf-8") as f:
-              f.write("\n".join(lines) + "\n")
-          PY
+           with open(path, "w", encoding="utf-8") as f:
+             f.write("\n".join(lines) + "\n")
+           PY
 
       # 8) 移除不需上傳的檔案
       - name: Prune deploy files
