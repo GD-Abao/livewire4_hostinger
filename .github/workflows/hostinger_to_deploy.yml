@@ -73,9 +73,21 @@ jobs:
           with open(path, "r", encoding="utf-8") as f:
               lines = f.read().splitlines()
 
-          def set_key(lines, key, value):
+            def normalize_env_value(value):
+              if value is None:
+                return None
+              if value == "":
+                return ""
+              # Quote values with whitespace or comment-like chars to avoid .env parsing issues.
+              if re.search(r"[\s#]", value) or "=" in value:
+                escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+                return f'"{escaped}"'
+              return value
+
+            def set_key(lines, key, value):
               if value is None or value == "":
                   return lines
+              value = normalize_env_value(value)
               pattern = re.compile(rf"^{re.escape(key)}=")
               out = []
               found = False
