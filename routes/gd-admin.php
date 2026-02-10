@@ -89,3 +89,8 @@ Route::prefix('gd-admin')->name('gd-admin.')->group(function () {
         registerGdAdminMenuRoutes(app('gdAdminMenu'));
     });
 });
+
+// 假設客戶沒有做前台登入，直接訪問 /login 就會被重定向到 /gd-admin/login
+// 但如果客戶有做前台登入，請務必註解掉這兩行，避免影響前台會員登入功能
+Route::get('/login', fn () => redirect('/gd-admin/login'))->name('login');
+Route::get('/dashboard', fn () => redirect('/gd-admin/dashboard'))->name('dashboard');
